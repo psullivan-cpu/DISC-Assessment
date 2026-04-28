@@ -10,6 +10,31 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Hit GET /voice-test in a browser to verify ElevenLabs key + voice are working
+app.get('/voice-test', async (req, res) => {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey || apiKey === 'your-elevenlabs-api-key') {
+    return res.json({ ok: false, reason: 'ELEVENLABS_API_KEY not set in .env' });
+  }
+  try {
+    const upstream = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}`,
+      {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Voice test.', model_id: 'eleven_turbo_v2_5' }),
+      }
+    );
+    if (!upstream.ok) {
+      const body = await upstream.text();
+      return res.json({ ok: false, status: upstream.status, body });
+    }
+    res.json({ ok: true, voice: ELEVEN_VOICE, message: 'ElevenLabs is working correctly.' });
+  } catch (err) {
+    res.json({ ok: false, reason: err.message });
+  }
+});
+
 app.post('/speak', async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'Missing text.' });

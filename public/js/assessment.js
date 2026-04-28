@@ -31,7 +31,6 @@
   ];
 
   const answers = {};
-  let currentIndex = 0;
 
   const counterEl      = document.getElementById('counter');
   const progressFill   = document.getElementById('progressFill');
@@ -46,110 +45,92 @@
     voiceStatusEl.textContent = text;
   }
 
-  // ── Button / voice answer racing ─────────────────────────────────────────
-  // buttonResolver is set while we're waiting for an answer.
-  // Clicking a rating button resolves it immediately (cancelling the mic).
-  let buttonResolver = null;
+  // ── Input resolution ──────────────────────────────────────────────────────
+  // currentResolve is set while waiting for user input.
+  // Resolves with { type: 'answer', val } | { type: 'repeat' } | { type: 'timeout' }
+  let currentResolve = null;
 
   ratingBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!buttonResolver) return;
+      if (!currentResolve) return;
       const val = parseInt(btn.dataset.val);
       ratingBtns.forEach(b => b.classList.toggle('active', b === btn));
       Voice.stopListening();
-      const resolve = buttonResolver;
-      buttonResolver = null;
-      resolve(val);
+      const r = currentResolve;
+      currentResolve = null;
+      r({ type: 'answer', val });
     });
   });
 
-  // Races mic recognition against a button tap — whichever comes first wins.
-  function listenOrButton() {
-    return new Promise(resolve => {
-      const myResolve = val => {
-        if (buttonResolver === myResolve) buttonResolver = null;
-        resolve(val);
-      };
-      buttonResolver = myResolve;
+  repeatBtn.style.display = 'block';
+  repeatBtn.addEventListener('click', () => {
+    if (!currentResolve) return;
+    Voice.stopListening();
+    const r = currentResolve;
+    currentResolve = null;
+    r({ type: 'repeat' });
+  });
 
-      Voice.listen(10000).then(val => {
-        if (buttonResolver === myResolve) { // mic won (button didn't fire)
-          buttonResolver = null;
-          resolve(val); // val may be null on timeout
-        }
-        // else: button already resolved — ignore mic result
+  function waitForInput() {
+    return new Promise(resolve => {
+      currentResolve = resolve;
+      Voice.listen(12000).then(val => {
+        if (currentResolve !== resolve) return; // already resolved by button/repeat
+        currentResolve = null;
+        resolve(val !== null ? { type: 'answer', val } : { type: 'timeout' });
       });
     });
   }
 
-  // ── Question flow ─────────────────────────────────────────────────────────
-  repeatBtn.style.display = 'block';
-  repeatBtn.addEventListener('click', async () => {
-    Voice.stopListening();
-    buttonResolver = null;
-    setStatus('speaking', 'Repeating question…');
-    await Voice.speak(QUESTIONS[currentIndex].text);
-    await Voice.speak('Say or tap 1, 2, 3, or 4.');
-    setStatus('listening', 'Listening… or tap a button below.');
-    restartListen();
-  });
+  // ── Single question: speak then listen until answered ─────────────────────
+  async function askQuestion(q) {
+    while (true) {
+      setStatus('speaking', 'Speaking question…');
+      await Voice.speak(q.text);
+      await Voice.speak('Say or tap 1, 2, 3, or 4.');
 
-  let listenLoopActive = false;
-  function restartListen() {
-    if (listenLoopActive) return;
-    listenLoopActive = true;
-    listenLoop().finally(() => { listenLoopActive = false; });
-  }
+      let silentRounds = 0;
+      while (true) {
+        setStatus('listening', 'Listening… or tap 1, 2, 3, or 4 below.');
+        const result = await waitForInput();
 
-  async function listenLoop() {
-    let silentRounds = 0;
-    let answer = null;
-    while (answer === null) {
-      setStatus('listening', 'Listening… or tap 1, 2, 3, or 4 below.');
-      answer = await listenOrButton();
-      if (answer === null) {
+        if (result.type === 'answer') return result.val;
+
+        if (result.type === 'repeat') break; // break inner loop → re-speak question
+
+        // timeout
         silentRounds++;
         if (silentRounds >= 2) {
           silentRounds = 0;
           setStatus('speaking', 'Please respond when ready…');
           await Voice.speak('Please say or tap 1, 2, 3, or 4.');
         } else {
-          setStatus('listening', 'Still listening… tap a button if preferred.');
+          setStatus('listening', 'Still listening… tap a button if you prefer.');
         }
       }
     }
+  }
 
-    // Answer received
-    ratingBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) === answer));
-    answers[QUESTIONS[currentIndex].id] = answer;
-    setStatus('speaking', `Got it — ${answer}.`);
-    await Voice.speak(`Got it, ${answer}.`);
+  // ── Main assessment loop — simple, linear, no recursion ──────────────────
+  async function runAssessment() {
+    for (let i = 0; i < QUESTIONS.length; i++) {
+      const q = QUESTIONS[i];
 
-    currentIndex++;
-    if (currentIndex < QUESTIONS.length) {
-      await askQuestion();
-    } else {
-      await finish();
+      counterEl.textContent = `Question ${i + 1} of ${QUESTIONS.length}`;
+      progressFill.style.width = `${(i / QUESTIONS.length) * 100}%`;
+      questionTextEl.textContent = q.text;
+      ratingBtns.forEach(b => b.classList.remove('active'));
+
+      const answer = await askQuestion(q);
+
+      answers[q.id] = answer;
+      ratingBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) === answer));
+      setStatus('speaking', `Got it — ${answer}.`);
+      await Voice.speak(`Got it, ${answer}.`);
     }
-  }
 
-  async function askQuestion() {
-    const q = QUESTIONS[currentIndex];
-    ratingBtns.forEach(b => b.classList.remove('active'));
-
-    counterEl.textContent = `Question ${currentIndex + 1} of ${QUESTIONS.length}`;
-    progressFill.style.width = `${(currentIndex / QUESTIONS.length) * 100}%`;
-    questionTextEl.textContent = q.text;
-
-    setStatus('speaking', 'Speaking question…');
-    await Voice.speak(q.text);
-    await Voice.speak('Say or tap 1, 2, 3, or 4.');
-
-    restartListen();
-  }
-
-  async function finish() {
-    buttonResolver = null;
+    // All done
+    currentResolve = null;
     setStatus('speaking', 'Assessment complete!');
     progressFill.style.width = '100%';
     counterEl.textContent = 'Complete!';
@@ -162,19 +143,16 @@
     window.location.href = 'results.html';
   }
 
-  // ── Welcome + disclaimer ──────────────────────────────────────────────────
+  // ── Welcome + disclaimer then begin ──────────────────────────────────────
   setStatus('speaking', 'Speaking welcome message…');
   await Voice.speak(
     `Welcome, ${name}. Before we begin, please know that this DISC assessment is purely for informational purposes. ` +
     `There are no right or wrong profiles — every style has unique strengths. ` +
-    `The goal is simply to give you insights that help improve communication and teamwork. ` +
+    `The goal is to give you insights that help improve communication and teamwork. ` +
     `You will hear 24 statements about yourself. After each one, say a number from 1 to 4, or tap the buttons on screen at any time. ` +
-    `1 means — Not at all like me. ` +
-    `2 means — Somewhat like me. ` +
-    `3 means — Mostly like me. ` +
-    `4 means — Very much like me. ` +
+    `1 means not at all like me. 2 means somewhat like me. 3 means mostly like me. 4 means very much like me. ` +
     `Let's begin.`
   );
 
-  await askQuestion();
+  await runAssessment();
 })();
