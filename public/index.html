@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DISC Personality Assessment</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="card">
+    <h1>DISC Assessment</h1>
+    <p class="subtitle">A 24-question voice-guided personality profile. Takes about 8 minutes.<br>Use <strong>Chrome</strong> or <strong>Edge</strong> for full voice support.</p>
+
+    <div class="browser-warning" id="browserWarning">
+      Your browser may not fully support voice features. For the best experience, please use <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
+    </div>
+
+    <form id="startForm">
+      <label for="name">Your Full Name</label>
+      <input type="text" id="name" placeholder="Jane Smith" required autocomplete="name" />
+
+      <label for="email">Your Email Address</label>
+      <input type="email" id="email" placeholder="jane@example.com" required autocomplete="email" />
+
+      <button type="submit" class="btn">Start Assessment</button>
+    </form>
+  </div>
+
+  <script>
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition || !window.speechSynthesis) {
+      document.getElementById('browserWarning').style.display = 'block';
+    }
+
+    document.getElementById('startForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const name  = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      if (!name || !email) return;
+      sessionStorage.setItem('disc_name',  name);
+      sessionStorage.setItem('disc_email', email);
+      window.location.href = 'assessment.html';
+    });
+  </script>
+</body>
+</html>

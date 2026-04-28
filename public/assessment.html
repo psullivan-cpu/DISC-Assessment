@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DISC Assessment — Questions</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="card">
+    <div class="question-counter" id="counter">Question 1 of 24</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+    </div>
+
+    <div class="question-text" id="questionText">Loading…</div>
+
+    <div class="voice-status">
+      <div class="mic-dot" id="micDot"></div>
+      <span id="voiceStatusText">Getting ready…</span>
+    </div>
+
+    <div class="rating-grid">
+      <button class="rating-btn" data-val="1">
+        <span class="num">1</span><span class="lbl">Not at all like me</span>
+      </button>
+      <button class="rating-btn" data-val="2">
+        <span class="num">2</span><span class="lbl">Somewhat like me</span>
+      </button>
+      <button class="rating-btn" data-val="3">
+        <span class="num">3</span><span class="lbl">Mostly like me</span>
+      </button>
+      <button class="rating-btn" data-val="4">
+        <span class="num">4</span><span class="lbl">Very much like me</span>
+      </button>
+    </div>
+
+    <button class="btn btn-secondary" id="retryBtn" style="display:none">Repeat Question</button>
+  </div>
+
+  <script src="js/voice.js"></script>
+  <script src="js/assessment.js"></script>
+</body>
+</html>

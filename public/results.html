@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DISC Results</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="card" style="max-width:620px">
+    <h1 id="resultsHeading">Your DISC Results</h1>
+    <p class="subtitle" id="resultsSubtitle">Analyzing your responses…</p>
+
+    <div class="voice-status">
+      <div class="mic-dot" id="micDot"></div>
+      <span id="voiceStatusText">Preparing results…</span>
+    </div>
+
+    <div class="score-bars" id="scoreBars"></div>
+
+    <div id="profileSection"></div>
+
+    <p class="error-note" id="errorNote" style="display:none"></p>
+
+    <div id="actionBtns" style="display:none;margin-top:24px">
+      <button class="btn btn-download" id="downloadBtn">Download PDF Report</button>
+      <button class="btn btn-secondary" id="retakeBtn"
+        onclick="window.location.href='index.html'">Take Assessment Again</button>
+    </div>
+  </div>
+
+  <script src="js/voice.js"></script>
+  <script src="js/results.js"></script>
+</body>
+</html>
