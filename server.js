@@ -1,11 +1,12 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const { score } = require('./src/scoring');
 const { generatePDF } = require('./src/pdf');
 
 const app = express();
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.post('/submit', async (req, res) => {
   const { name, email, answers } = req.body;
@@ -70,8 +71,13 @@ app.post('/download-pdf', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`DISC Assessment running at http://localhost:${PORT}`);
-  console.log('Open in Chrome or Edge for full voice support.');
-});
+// Local dev only — Vercel imports the app as a module
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`DISC Assessment running at http://localhost:${PORT}`);
+    console.log('Open in Chrome or Edge for full voice support.');
+  });
+}
+
+module.exports = app;
