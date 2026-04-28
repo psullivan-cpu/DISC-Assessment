@@ -4,9 +4,45 @@ const express = require('express');
 const { score } = require('./src/scoring');
 const { generatePDF } = require('./src/pdf');
 
+const ELEVEN_VOICE = 'NNl6r8mD7vthiJatiJt1';
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.post('/speak', async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'Missing text.' });
+
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'ELEVENLABS_API_KEY not configured.' });
+
+  try {
+    const upstream = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}`,
+      {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      }
+    );
+
+    if (!upstream.ok) {
+      console.error('ElevenLabs error:', upstream.status, await upstream.text());
+      return res.status(502).json({ error: 'ElevenLabs API error.' });
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (err) {
+    console.error('/speak error:', err);
+    res.status(500).json({ error: 'Failed to generate speech.' });
+  }
+});
 
 app.post('/submit', async (req, res) => {
   const { name, email, answers } = req.body;
