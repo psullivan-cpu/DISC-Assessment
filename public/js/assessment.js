@@ -32,14 +32,13 @@
 
   const answers = {};
   let currentIndex = 0;
-  let awaitingVoice = false;
 
   const counterEl      = document.getElementById('counter');
   const progressFill   = document.getElementById('progressFill');
   const questionTextEl = document.getElementById('questionText');
   const micDot         = document.getElementById('micDot');
   const voiceStatusEl  = document.getElementById('voiceStatusText');
-  const retryBtn       = document.getElementById('retryBtn');
+  const repeatBtn      = document.getElementById('retryBtn');
   const ratingBtns     = document.querySelectorAll('.rating-btn');
 
   function setStatus(state, text) {
@@ -47,15 +46,84 @@
     voiceStatusEl.textContent = text;
   }
 
-  async function recordAnswer(val) {
-    if (awaitingVoice) return;
-    const q = QUESTIONS[currentIndex];
-    answers[q.id] = val;
+  // ── Button / voice answer racing ─────────────────────────────────────────
+  // buttonResolver is set while we're waiting for an answer.
+  // Clicking a rating button resolves it immediately (cancelling the mic).
+  let buttonResolver = null;
 
-    ratingBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) === val));
+  ratingBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!buttonResolver) return;
+      const val = parseInt(btn.dataset.val);
+      ratingBtns.forEach(b => b.classList.toggle('active', b === btn));
+      Voice.stopListening();
+      const resolve = buttonResolver;
+      buttonResolver = null;
+      resolve(val);
+    });
+  });
 
-    setStatus('speaking', `Got it — ${val}.`);
-    await Voice.speak(`Got it, ${val}.`);
+  // Races mic recognition against a button tap — whichever comes first wins.
+  function listenOrButton() {
+    return new Promise(resolve => {
+      const myResolve = val => {
+        if (buttonResolver === myResolve) buttonResolver = null;
+        resolve(val);
+      };
+      buttonResolver = myResolve;
+
+      Voice.listen(10000).then(val => {
+        if (buttonResolver === myResolve) { // mic won (button didn't fire)
+          buttonResolver = null;
+          resolve(val); // val may be null on timeout
+        }
+        // else: button already resolved — ignore mic result
+      });
+    });
+  }
+
+  // ── Question flow ─────────────────────────────────────────────────────────
+  repeatBtn.style.display = 'block';
+  repeatBtn.addEventListener('click', async () => {
+    Voice.stopListening();
+    buttonResolver = null;
+    setStatus('speaking', 'Repeating question…');
+    await Voice.speak(QUESTIONS[currentIndex].text);
+    await Voice.speak('Say or tap 1, 2, 3, or 4.');
+    setStatus('listening', 'Listening… or tap a button below.');
+    restartListen();
+  });
+
+  let listenLoopActive = false;
+  function restartListen() {
+    if (listenLoopActive) return;
+    listenLoopActive = true;
+    listenLoop().finally(() => { listenLoopActive = false; });
+  }
+
+  async function listenLoop() {
+    let silentRounds = 0;
+    let answer = null;
+    while (answer === null) {
+      setStatus('listening', 'Listening… or tap 1, 2, 3, or 4 below.');
+      answer = await listenOrButton();
+      if (answer === null) {
+        silentRounds++;
+        if (silentRounds >= 2) {
+          silentRounds = 0;
+          setStatus('speaking', 'Please respond when ready…');
+          await Voice.speak('Please say or tap 1, 2, 3, or 4.');
+        } else {
+          setStatus('listening', 'Still listening… tap a button if preferred.');
+        }
+      }
+    }
+
+    // Answer received
+    ratingBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) === answer));
+    answers[QUESTIONS[currentIndex].id] = answer;
+    setStatus('speaking', `Got it — ${answer}.`);
+    await Voice.speak(`Got it, ${answer}.`);
 
     currentIndex++;
     if (currentIndex < QUESTIONS.length) {
@@ -65,81 +133,47 @@
     }
   }
 
-  ratingBtns.forEach(btn => {
-    btn.addEventListener('click', () => recordAnswer(parseInt(btn.dataset.val)));
-  });
-
-  retryBtn.addEventListener('click', async () => {
-    retryBtn.style.display = 'none';
-    await askQuestion(true);
-  });
-
-  async function askQuestion(repeatOnly = false) {
+  async function askQuestion() {
     const q = QUESTIONS[currentIndex];
     ratingBtns.forEach(b => b.classList.remove('active'));
-    retryBtn.style.display = 'none';
 
     counterEl.textContent = `Question ${currentIndex + 1} of ${QUESTIONS.length}`;
     progressFill.style.width = `${(currentIndex / QUESTIONS.length) * 100}%`;
     questionTextEl.textContent = q.text;
 
-    setStatus('speaking', 'Speaking…');
+    setStatus('speaking', 'Speaking question…');
     await Voice.speak(q.text);
-    await Voice.speak('Say 1, 2, 3, or 4.');
+    await Voice.speak('Say or tap 1, 2, 3, or 4.');
 
-    setStatus('listening', 'Listening… say 1, 2, 3, or 4.');
-    awaitingVoice = true;
-
-    let attempts = 0;
-    let answer = null;
-
-    while (attempts < 3 && answer === null) {
-      answer = await Voice.listen(8000);
-      if (answer === null) {
-        attempts++;
-        if (attempts < 3) {
-          setStatus('speaking', 'Please try again…');
-          await Voice.speak("I didn't catch that. Please say 1, 2, 3, or 4.");
-          setStatus('listening', 'Listening…');
-        }
-      }
-    }
-
-    awaitingVoice = false;
-
-    if (answer !== null) {
-      retryBtn.style.display = 'none';
-      await recordAnswer(answer);
-    } else {
-      setStatus('', 'Voice not detected — tap a button or say the number again.');
-      retryBtn.style.display = 'block';
-    }
+    restartListen();
   }
 
   async function finish() {
+    buttonResolver = null;
     setStatus('speaking', 'Assessment complete!');
     progressFill.style.width = '100%';
     counterEl.textContent = 'Complete!';
     questionTextEl.textContent = 'Great job! Calculating your results…';
     ratingBtns.forEach(b => { b.disabled = true; });
-    retryBtn.style.display = 'none';
+    repeatBtn.style.display = 'none';
 
     await Voice.speak('Excellent! You have completed all 24 questions. Preparing your results now.');
-
     sessionStorage.setItem('disc_answers', JSON.stringify(answers));
     window.location.href = 'results.html';
   }
 
-  // Welcome and start
+  // ── Welcome + disclaimer ──────────────────────────────────────────────────
   setStatus('speaking', 'Speaking welcome message…');
   await Voice.speak(
-    `Welcome, ${name}. You will hear 24 statements about yourself. ` +
-    `After each one, say a number from 1 to 4. ` +
-    `One means — Not at all like me. ` +
-    `Two means — Somewhat like me. ` +
-    `Three means — Mostly like me. ` +
-    `Four means — Very much like me. ` +
-    `You can also tap the buttons on screen at any time. Let\'s begin.`
+    `Welcome, ${name}. Before we begin, please know that this DISC assessment is purely for informational purposes. ` +
+    `There are no right or wrong profiles — every style has unique strengths. ` +
+    `The goal is simply to give you insights that help improve communication and teamwork. ` +
+    `You will hear 24 statements about yourself. After each one, say a number from 1 to 4, or tap the buttons on screen at any time. ` +
+    `1 means — Not at all like me. ` +
+    `2 means — Somewhat like me. ` +
+    `3 means — Mostly like me. ` +
+    `4 means — Very much like me. ` +
+    `Let's begin.`
   );
 
   await askQuestion();

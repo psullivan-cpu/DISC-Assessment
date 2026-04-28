@@ -274,3 +274,14 @@ input[type="email"]:focus {
   margin-bottom: 24px;
   display: none;
 }
+
+.disclaimer-note {
+  background: #EAF4FB;
+  border-left: 4px solid #2980B9;
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-size: 0.88rem;
+  color: #2C3E50;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
