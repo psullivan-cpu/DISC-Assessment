@@ -31,13 +31,14 @@
   ];
 
   const answers = {};
+  let currentIndex = 0;
 
   const counterEl      = document.getElementById('counter');
   const progressFill   = document.getElementById('progressFill');
   const questionTextEl = document.getElementById('questionText');
   const micDot         = document.getElementById('micDot');
   const voiceStatusEl  = document.getElementById('voiceStatusText');
-  const repeatBtn      = document.getElementById('retryBtn');
+  const hearAgainBtn   = document.getElementById('retryBtn');
   const ratingBtns     = document.querySelectorAll('.rating-btn');
 
   function setStatus(state, text) {
@@ -45,111 +46,75 @@
     voiceStatusEl.textContent = text;
   }
 
-  // ── Input resolution ──────────────────────────────────────────────────────
-  // currentResolve is set while waiting for user input.
-  // Resolves with { type: 'answer', val } | { type: 'repeat' } | { type: 'timeout' }
-  let currentResolve = null;
+  // ── Wait for a button click — the only input method ───────────────────────
+  let answerResolve = null;
 
   ratingBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!currentResolve) return;
+      if (!answerResolve) return;
       const val = parseInt(btn.dataset.val);
       ratingBtns.forEach(b => b.classList.toggle('active', b === btn));
-      Voice.stopListening();
-      const r = currentResolve;
-      currentResolve = null;
-      r({ type: 'answer', val });
+      const r = answerResolve;
+      answerResolve = null;
+      r(val);
     });
   });
 
-  repeatBtn.style.display = 'block';
-  repeatBtn.addEventListener('click', () => {
-    if (!currentResolve) return;
-    Voice.stopListening();
-    const r = currentResolve;
-    currentResolve = null;
-    r({ type: 'repeat' });
+  function waitForClick() {
+    setStatus('', 'Click an answer below.');
+    return new Promise(resolve => { answerResolve = resolve; });
+  }
+
+  // ── "Hear Again" button re-speaks the current question ───────────────────
+  hearAgainBtn.style.display = 'block';
+  hearAgainBtn.addEventListener('click', async () => {
+    if (!answerResolve) return;
+    setStatus('speaking', 'Repeating question…');
+    await Voice.speak(QUESTIONS[currentIndex].text);
+    setStatus('', 'Click an answer below.');
   });
 
-  function waitForInput() {
-    return new Promise(resolve => {
-      currentResolve = resolve;
-      Voice.listen(12000).then(val => {
-        if (currentResolve !== resolve) return; // already resolved by button/repeat
-        currentResolve = null;
-        resolve(val !== null ? { type: 'answer', val } : { type: 'timeout' });
-      });
-    });
-  }
-
-  // ── Single question: speak then listen until answered ─────────────────────
-  async function askQuestion(q) {
-    while (true) {
-      setStatus('speaking', 'Speaking question…');
-      await Voice.speak(q.text);
-      await Voice.speak('Say or tap 1, 2, 3, or 4.');
-
-      let silentRounds = 0;
-      while (true) {
-        setStatus('listening', 'Listening… or tap 1, 2, 3, or 4 below.');
-        const result = await waitForInput();
-
-        if (result.type === 'answer') return result.val;
-
-        if (result.type === 'repeat') break; // break inner loop → re-speak question
-
-        // timeout
-        silentRounds++;
-        if (silentRounds >= 2) {
-          silentRounds = 0;
-          setStatus('speaking', 'Please respond when ready…');
-          await Voice.speak('Please say or tap 1, 2, 3, or 4.');
-        } else {
-          setStatus('listening', 'Still listening… tap a button if you prefer.');
-        }
-      }
-    }
-  }
-
-  // ── Main assessment loop — simple, linear, no recursion ──────────────────
+  // ── Main assessment loop ──────────────────────────────────────────────────
   async function runAssessment() {
-    for (let i = 0; i < QUESTIONS.length; i++) {
-      const q = QUESTIONS[i];
+    for (currentIndex = 0; currentIndex < QUESTIONS.length; currentIndex++) {
+      const q = QUESTIONS[currentIndex];
 
-      counterEl.textContent = `Question ${i + 1} of ${QUESTIONS.length}`;
-      progressFill.style.width = `${(i / QUESTIONS.length) * 100}%`;
+      counterEl.textContent = `Question ${currentIndex + 1} of ${QUESTIONS.length}`;
+      progressFill.style.width = `${(currentIndex / QUESTIONS.length) * 100}%`;
       questionTextEl.textContent = q.text;
       ratingBtns.forEach(b => b.classList.remove('active'));
 
-      const answer = await askQuestion(q);
+      setStatus('speaking', 'Speaking question…');
+      await Voice.speak(q.text);
+
+      const answer = await waitForClick();
 
       answers[q.id] = answer;
-      ratingBtns.forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) === answer));
       setStatus('speaking', `Got it — ${answer}.`);
       await Voice.speak(`Got it, ${answer}.`);
     }
 
-    // All done
-    currentResolve = null;
+    // Complete
+    answerResolve = null;
+    hearAgainBtn.style.display = 'none';
     setStatus('speaking', 'Assessment complete!');
     progressFill.style.width = '100%';
     counterEl.textContent = 'Complete!';
     questionTextEl.textContent = 'Great job! Calculating your results…';
     ratingBtns.forEach(b => { b.disabled = true; });
-    repeatBtn.style.display = 'none';
 
     await Voice.speak('Excellent! You have completed all 24 questions. Preparing your results now.');
     sessionStorage.setItem('disc_answers', JSON.stringify(answers));
     window.location.href = 'results.html';
   }
 
-  // ── Welcome + disclaimer then begin ──────────────────────────────────────
+  // ── Welcome — instructs clicking, not speaking ────────────────────────────
   setStatus('speaking', 'Speaking welcome message…');
   await Voice.speak(
     `Welcome, ${name}. Before we begin, please know that this DISC assessment is purely for informational purposes. ` +
     `There are no right or wrong profiles — every style has unique strengths. ` +
     `The goal is to give you insights that help improve communication and teamwork. ` +
-    `You will hear 24 statements about yourself. After each one, say a number from 1 to 4, or tap the buttons on screen at any time. ` +
+    `You will hear 24 statements read aloud. After each one, click the button on screen that best matches you. ` +
     `1 means not at all like me. 2 means somewhat like me. 3 means mostly like me. 4 means very much like me. ` +
     `Let's begin.`
   );
