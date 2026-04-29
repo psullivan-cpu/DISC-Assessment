@@ -4,7 +4,7 @@ const express = require('express');
 const { score } = require('./src/scoring');
 const { generatePDF } = require('./src/pdf');
 
-const ELEVEN_VOICE = 'NNl6r8mD7vthiJatiJt1';
+const ELEVEN_VOICE = 'pNInz6obpgDQGcFmaJgB'; // Adam — deep, authoritative, free plan
 
 const app = express();
 app.use(express.json());
